@@ -1,0 +1,329 @@
+swagger: '2.0'
+
+basePath: /api
+
+info:
+  version: '0.0.0'
+  title: Sylo Edge API
+
+consumes:
+  - application/json
+
+produces:
+  - application/json
+
+paths:
+  #-----------------------------------------------------------------------------
+  # health check ---------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  /health:
+    get:
+      description: |
+        Health check
+      responses:
+        200:
+          description: Successful response
+        default:
+          $ref: '#/responses/InternalError'
+
+  #-----------------------------------------------------------------------------
+  # Authentication -------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  /authenticate:
+    post:
+      description: |
+        Retrieve a TGT and session from the kerberos KDC, in order to acquire
+        grants over `POST /api/kerberos/grant`
+      responses:
+        200:
+          description: Successful response
+          schema:
+            $ref: '#/definitions/Grant'
+        400:
+          $ref: '#/responses/InvalidInput'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /grant:
+    post:
+      description: |
+        Issue a grant for a given service
+      parameters:
+        - name: request
+          in: body
+          required: true
+          description: The TGT request
+          schema:
+            type: object
+            properties:
+              tgt:
+                type: string
+                description: |
+                  The ticket granted ticket
+              authenticator:
+                type: string
+                description: |
+                  The authenticator encrypted with the user's key
+              service:
+                type: string
+                description: |
+                  The service to create granting ticket for.
+                  This service must be known to the KDC.
+            required:
+              - tgt
+              - authenticator
+              - service
+      responses:
+        200:
+          description: Successful response
+          schema:
+            $ref: '#/definitions/Grant'
+        400:
+          $ref: '#/responses/InvalidInput'
+        default:
+          $ref: '#/responses/InternalError'
+
+  #-----------------------------------------------------------------------------
+  # Membership -----------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  /register:
+    post:
+      description: |
+        Register a new account with sylo
+      parameters:
+        - name: request
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              firstName:
+                type: string
+              lastName:
+                type: string
+            required:
+              - firstName
+              - lastName
+      responses:
+        200:
+          description: |
+            The account has been created and is now pending verification
+          schema:
+            $ref: '#/definitions/Account'
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /verify:
+    get:
+      description: |
+        Verify an e-mail address
+      parameters:
+        - name: key
+          in: query
+          description: The key to verify
+          required: true
+          type: string
+      responses:
+        200:
+          description: The email has been verified
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /me:
+    get:
+      description: |
+        Retrieve information about the currently logged in user.
+      responses:
+        200:
+          $ref: '#/responses/Account'
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /accounts/{email}:
+    get:
+      description: |
+        Retrieve information about the user that holds the given email address.
+      parameters:
+        - name: email
+          type: string
+          in: path
+          format: email
+          required: true
+      responses:
+        200:
+          $ref: '#/responses/Account'
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /change-password:
+    post:
+      description: |
+        Change the currently logged in user's password
+      parameters:
+        - name: request
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              oldPassword:
+                type: string
+                format: password
+              newPassword:
+                type: string
+                format: password
+            required:
+              - oldPassword
+              - newPassword
+      responses:
+        200:
+          description: |
+            The password has been changed
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/InternalError'
+
+  /reset-password:
+    post:
+      description: |
+        Reset a user's password
+      parameters:
+        - name: request
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              email:
+                description: |
+                  The email of the account to reset the password for
+            required:
+              - email
+      responses:
+        200:
+          description: |
+            The password has been reset
+        400:
+          $ref: '#/responses/InvalidInput'
+        401:
+          $ref: '#/responses/Unauthorized'
+        default:
+          $ref: '#/responses/Error'
+
+  # TODO
+  #/invite:
+  #  post:
+  #    description: |
+  #      Send an invitation to Sylo to the given e-mail address.
+
+responses:
+
+  InvalidInput:
+    description: Invalid input
+    schema:
+      $ref: '#/definitions/Error'
+
+  InternalError:
+    description: An internal error occured
+    schema:
+      $ref: '#/definitions/Error'
+
+  Unauthorized:
+    description: Access unauthorized
+    schema:
+      $ref: '#/definitions/Error'
+
+  #-----------------------------------------------------------------------------
+  # Membership Responses -------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  Account:
+    description: The account
+    schema:
+      $ref: '#/definitions/Account'
+
+definitions:
+
+  #-----------------------------------------------------------------------------
+  # Errors ---------------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  Error:
+    type: object
+    required:
+      - code
+      - message
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+
+  #-----------------------------------------------------------------------------
+  # Authentication -------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  Grant:
+    type: object
+    properties:
+      session:
+        type: string
+        format: base64
+        description: The session only the client can read
+      tgt:
+        type: string
+        format: base64
+        description: The TGT only the TGS can read.
+
+
+  #-----------------------------------------------------------------------------
+  # Membership -----------------------------------------------------------------
+  #-----------------------------------------------------------------------------
+
+  Account:
+    type: object
+    properties:
+      firstName:
+        type: string
+      lastName:
+        type: string
+      email:
+        type: string
+        format: email
+      permissions:
+        type: array
+        items:
+          $ref: '#/definitions/Permission'
+    required:
+      - firstName
+      - lastName
+      - email
+      # - permissions
+
+  Permission:
+    type: object
+    properties:
+      code:
+        type: string
