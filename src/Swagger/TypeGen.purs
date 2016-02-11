@@ -11,7 +11,7 @@ import Debug.Trace
 import Node.Buffer hiding (read, readString)
 import Data.Generic
 import Control.Bind ((=<<))
-import Data.Array (foldM, (:))
+import Data.Array (foldM, (:), concatMap)
 import Control.Alt ((<|>))
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
@@ -19,20 +19,29 @@ import Data.Traversable (traverse)
 import Data.Foldable (any)
 import Data.String (toUpper, replace)
 import qualified Data.String.Regex as R
+import qualified Data.Map as Map
+import Data.Tuple (Tuple (..))
 
 foreign import parseYaml :: Buffer -> Foreign
 
-newtype Param = Param {
-  loc      :: String
-, name     :: String
-, required :: Boolean
-, type     :: Type
+newtype Path = Path {
+  path :: String
+, ops  :: Array Operation
 }
 
 newtype Operation = Operation {
   id     :: Maybe String
 , name   :: String
 , params :: Array Param
+, path   :: String
+, method :: String
+}
+
+newtype Param = Param {
+  loc      :: String
+, name     :: String
+, required :: Boolean
+, type     :: Type
 }
 
 newtype Field = Field {
@@ -193,6 +202,8 @@ readOp method path op = do
   return $ Operation {
     id:     opId
   , name:   name
+  , method: method
+  , path:   path
   , params: params
   }
 
@@ -202,23 +213,52 @@ generateTypes spec = do
   definitions <- genDefTypes "definitions"
   parameters  <- genDefTypes "parameters"
   responses   <- genDefTypes "responses"
-  operations  <- genOpTypes
-  traceShowA "FOO"
+  paths       <- readPaths
+
+  traceShowA $ genServerRequestInterface paths
+                                         definitions
+                                         parameters
+                                         responses
+
   return unit
 
   where
-    genOpTypes :: F Unit
-    genOpTypes = do
-      paths <- readProp "paths" spec
 
-      -- Collect all operations per `path`
-      ops <- keys paths >>= \paths' -> flip traverse paths' \path' -> do
-        path <- readProp path' paths
+    -- Generate the server's request interface for every operation
+    -- The swagger specifaction says that there MUST be only one 'body'
+    -- parameter and since there can only be one payload, 'body' and
+    -- 'formData' parameters are mutually exclusive. This implementation
+    -- assumes a valid swagger spec and chooses a single 'body' / 'formData'
+    -- field in an undefined manner.
+    genServerRequestInterface :: Array Path
+                              -> Array Type
+                              -> Array Type
+                              -> Array Type
+                              -> Type
+    genServerRequestInterface paths _ _ _ =
+      let
+        allOps = concatMap (\(Path path) -> path.ops) paths
+        x      = flip map allOps \(Operation op) ->
+                  let keyedParams = flip map op.params \(Param p) ->
+                                      Tuple p.loc $ Param p
+                   in Map.fromFoldable keyedParams
+       in StringType
+
+    readPaths :: F (Array Path)
+    readPaths = do
+      paths    <- readProp "paths" spec
+      pathKeys <- keys paths
+      flip traverse pathKeys \pathKey -> do
         -- TODO: Read shared parameters
-        keys path >>= \ops' -> flip traverse ops' \method -> do
-          readOp method path' =<< readProp method path
+        path   <- readProp pathKey paths
+        opKeys <- keys path
+        ops    <- flip traverse opKeys \opKey -> do
+          readOp opKey pathKey =<< readProp opKey path
 
-      traceShowA ops
+        return $ Path {
+          path: pathKey
+        , ops:  ops
+        }
 
     genDefTypes :: String -> F (Array Type)
     genDefTypes n = (genDefTypes' =<< readProp n spec) <|> return []
