@@ -7,9 +7,11 @@ import Node.FS (FS())
 import Node.FS.Sync
 import Control.Monad.Eff.Exception (EXCEPTION())
 import Swagger.TypeGen
+import Debug.Trace
 
 main :: forall e. Eff (console :: CONSOLE, fs :: FS, err :: EXCEPTION | e) Unit
 main = do
   spec <- parseYaml <$> readFile "test/fixtures/swagger.yaml"
   let types = generateTypes spec
+  traceShowA types
   log "Hello sailor!"

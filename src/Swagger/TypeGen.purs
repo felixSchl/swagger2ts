@@ -14,12 +14,26 @@ import Control.Bind ((=<<))
 import Data.Array (foldM, (:))
 import Control.Alt ((<|>))
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Data.Foldable (any)
-import Data.String (replace)
+import Data.String (toUpper, replace)
+import qualified Data.String.Regex as R
 
 foreign import parseYaml :: Buffer -> Foreign
+
+newtype Param = Param {
+  loc      :: String
+, name     :: String
+, required :: Boolean
+, type     :: Type
+}
+
+newtype Operation = Operation {
+  id     :: Maybe String
+, name   :: String
+, params :: Array Param
+}
 
 newtype Field = Field {
   name     :: String
@@ -69,6 +83,14 @@ derive instance genericField :: Generic Field
 instance showField :: Show Field where
   show = gShow
 
+derive instance paramField :: Generic Param
+instance showParam :: Show Param where
+  show = gShow
+
+derive instance operationField :: Generic Operation
+instance showOperation :: Show Operation where
+  show = gShow
+
 -- Convert a swagger schema into a type.
 toType :: Foreign -> F Type
 toType schema = fromRefField <|> fromTypeField
@@ -112,6 +134,68 @@ toType schema = fromRefField <|> fromTypeField
         toArray = ArrayType <$> do
           toType =<< readProp "items" schema
 
+readParam :: Foreign -> F Param
+readParam param = do
+  loc      <- readString =<< readProp "in"   param
+  name     <- readString =<< readProp "name" param
+  required <- case loc of
+    "path" -> return true
+    _      -> (readBoolean =<< readProp "required" param)
+                <|> return false
+
+  -- Determine the "type" of the parameter. Unfortunately, we cannot
+  -- simply use `toType` because of how the specification is layed
+  -- out. Reference: http://swagger.io/specification/#parameterObject
+  -- The type check for non-body parameters below is exhaustive as far
+  -- as the specifaction is concerned.
+
+  typ <- case loc of
+    "body" -> toType =<< readProp "schema" param
+    _      -> do
+      typ <- readString =<< readProp "type" param
+      case typ of
+        "string"  -> return StringType
+        "number"  -> return NumberType
+        "integer" -> return NumberType
+        "boolean" -> return BooleanType
+        "file"    -> Left $ JSONError "FILE NOT IMPLEMENTED"
+        "array"   -> ArrayType <$> do toType =<< readProp "items" param
+        _         -> Left $ JSONError $ "Unknown type `" ++ typ ++ "`"
+
+  return $ Param {
+    loc:      loc
+  , name:     name
+  , required: required
+  , type:     typ
+  }
+
+readOp :: String -> String -> Foreign -> F Operation
+readOp method path op = do
+  opId <- do
+    (Just <$> do readString =<< readProp "operationId" op)
+    <|> return Nothing
+
+  -- Construct a name for the OP.
+  -- Should the optional `operationId` be given, use that. Otherwise, fall back
+  -- to a concatenation of method and path.
+  name <- return $ flip maybe id
+      (toUpper method ++
+        (R.replace (R.regex "{" $ R.parseFlags "g") "$"
+          (R.replace (R.regex "}" $ R.parseFlags "g") ""
+            (R.replace (R.regex "[/-]" $ R.parseFlags "g") "_"
+              path))))
+      opId
+
+  params <- do
+    traverse readParam =<< do
+      (readArray =<< readProp "parameters" op) <|> return []
+
+  return $ Operation {
+    id:     opId
+  , name:   name
+  , params: params
+  }
+
 -- Derive type information from a swagger spec.
 generateTypes :: Foreign -> F Unit
 generateTypes spec = do
@@ -119,35 +203,22 @@ generateTypes spec = do
   parameters  <- genDefTypes "parameters"
   responses   <- genDefTypes "responses"
   operations  <- genOpTypes
-  traceShowA operations
+  traceShowA "FOO"
   return unit
 
   where
     genOpTypes :: F Unit
     genOpTypes = do
       paths <- readProp "paths" spec
-      keys paths >>= traverse (genOpType paths)
-      return unit
 
-      where
-        genOpType :: Foreign -> String -> F Unit
-        genOpType def path = do
-          -- TODO: Generate the request/response types for server/client modules
-          return unit
-            where
+      -- Collect all operations per `path`
+      ops <- keys paths >>= \paths' -> flip traverse paths' \path' -> do
+        path <- readProp path' paths
+        -- TODO: Read shared parameters
+        keys path >>= \ops' -> flip traverse ops' \method -> do
+          readOp method path' =<< readProp method path
 
-              -- | Generate the server request type.
-              -- | This type is compatible with the object produced by
-              -- | the `swagger-express-middleware` module, and can be used
-              -- | as follows:
-              -- |
-              -- | ```
-              -- | function(request: <GeneratedType>) { ... }
-              -- | ```
-              genServerReqType :: F Type
-              genServerReqType = do
-                -- XXX: Implement this (!)
-                return StringType
+      traceShowA ops
 
     genDefTypes :: String -> F (Array Type)
     genDefTypes n = (genDefTypes' =<< readProp n spec) <|> return []
