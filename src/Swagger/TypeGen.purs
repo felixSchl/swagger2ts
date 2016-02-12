@@ -16,10 +16,10 @@ import Control.Alt ((<|>))
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
-import Data.Foldable (any)
+import Data.Foldable (foldl, any)
 import Data.String (toUpper, replace)
 import qualified Data.String.Regex as R
-import qualified Data.Map as Map
+import qualified Data.StrMap as Map
 import Data.Tuple (Tuple (..))
 
 foreign import parseYaml :: Buffer -> Foreign
@@ -215,34 +215,75 @@ generateTypes spec = do
   responses   <- genDefTypes "responses"
   paths       <- readPaths
 
-  traceShowA $ genServerRequestInterface paths
-                                         definitions
-                                         parameters
-                                         responses
+  let ops = concatMap (\(Path path) -> path.ops) paths
+
+  traceShowA $ ops <#> genServerTypes definitions
+                                      parameters
+                                      responses
 
   return unit
 
   where
 
-    -- Generate the server's request interface for every operation
+    genServerTypes :: Array Type
+                   -> Array Type
+                   -> Array Type
+                   -> Operation
+                   -> Tuple Type Type
+    genServerTypes d p r op = Tuple (genServerRequestType  d p r op)
+                                    (genServerResponseType d p r op)
+
+
+    -- Generate the server's request interface for every operation.
     -- The swagger specifaction says that there MUST be only one 'body'
     -- parameter and since there can only be one payload, 'body' and
     -- 'formData' parameters are mutually exclusive. This implementation
     -- assumes a valid swagger spec and chooses a single 'body' / 'formData'
     -- field in an undefined manner.
-    genServerRequestInterface :: Array Path
-                              -> Array Type
-                              -> Array Type
-                              -> Array Type
-                              -> Type
-    genServerRequestInterface paths _ _ _ =
-      let
-        allOps = concatMap (\(Path path) -> path.ops) paths
-        x      = flip map allOps \(Operation op) ->
-                  let keyedParams = flip map op.params \(Param p) ->
-                                      Tuple p.loc $ Param p
-                   in Map.fromFoldable keyedParams
-       in StringType
+
+    genServerRequestType :: Array Type
+                         -> Array Type
+                         -> Array Type
+                         -> Operation
+                         -> Type
+    genServerRequestType _ _ _ (Operation op) =
+
+      -- Reduce parameters into a map of `location -> types`.
+      -- This reduction will select a single 'body' (if any) or a single
+      -- 'formData', in an undefined fashion. Other parameters are merged.
+
+      let fields = flip Map.foldMap
+                      (ObjectType <$> (foldl step Map.empty op.params))
+                      (\loc typ -> [
+                        Field {
+                          name:     loc
+                        , required: false -- XXX: Determine based on `v`
+                        , type:     typ
+                        , default:  Nothing
+                        }
+                      ])
+       in InterfaceType (op.name ++ "Request") [] fields
+      where
+        step m (Param p) =
+          if (p.loc == "body") || (p.loc == "formData")
+            then Map.insert p.loc [f] m
+            else Map.alter resolveParams p.loc m
+          where
+            resolveParams Nothing   = Just [f]
+            resolveParams (Just fs) = Just (f:fs)
+            f = Field {
+              name:     p.name
+            , required: p.required
+            , type:     p.type
+            , default:  Nothing
+            }
+
+    genServerResponseType :: Array Type
+                          -> Array Type
+                          -> Array Type
+                          -> Operation
+                          -> Type
+    genServerResponseType _ _ _ _ = StringType -- XXX
 
     readPaths :: F (Array Path)
     readPaths = do
