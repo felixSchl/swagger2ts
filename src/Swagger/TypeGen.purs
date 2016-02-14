@@ -18,7 +18,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Data.Foldable (foldl, any, intercalate)
-import Data.String (toUpper, replace, fromCharArray)
+import Data.String (toUpper, replace, fromCharArray, uncons, fromChar)
 import qualified Data.String.Regex as R
 import qualified Data.StrMap as Map
 import Data.Tuple (Tuple (..))
@@ -221,7 +221,13 @@ readOp method path op = do
           (R.replace (R.regex "}" $ R.parseFlags "g") ""
             (R.replace (R.regex "[/-]" $ R.parseFlags "g") "_"
               path))))
-      opId
+      (do
+        -- Upper-case first letter
+        id <- opId
+        return $ maybe ""
+                       (\({ head, tail }) ->
+                        (toUpper $ fromChar head) ++ tail)
+                       (uncons id))
 
   params <- do
     traverse readParam =<< do
@@ -235,8 +241,34 @@ readOp method path op = do
   , params: params
   }
 
+newtype ReqRes = ReqRes {
+  request  :: Type
+, response :: Type
+}
+
+newtype SwaggerTypes = SwaggerTypes {
+  server :: Array ReqRes
+, client :: Array ReqRes
+}
+
+derive instance genericReqRes :: Generic ReqRes
+
+instance showReqRes :: Show ReqRes where
+  show = gShow
+
+instance eqReqRes :: Eq ReqRes where
+  eq = gEq
+
+derive instance genericSwaggerTypes :: Generic SwaggerTypes
+
+instance showSwaggerTypes :: Show SwaggerTypes where
+  show = gShow
+
+instance eqSwaggerTypes :: Eq SwaggerTypes where
+  eq = gEq
+
 -- Derive type information from a swagger spec.
--- generateTypes :: Foreign -> F Unit
+generateTypes :: Foreign -> F SwaggerTypes
 generateTypes spec = do
   paths <- readPaths
 
@@ -244,17 +276,19 @@ generateTypes spec = do
   parameters  <- genDefTypes "parameters"
   responses   <- genDefTypes "responses"
 
-  let ops   = concatMap (\(Path path) -> path.ops) paths
-      types = ops <#> genTypes definitions
-                                parameters
-                                responses
-                                genClientRequestType
-                                genResponseType
-  return types
+  let ops = concatMap (\(Path path) -> path.ops) paths
+      gen = genTypes definitions parameters responses
+
+  return $ SwaggerTypes {
+    server: ops <#> gen genServerRequestType genResponseType
+  , client: ops <#> gen genClientRequestType genResponseType
+  }
 
   where
 
-    genTypes d p r freq fres op = Tuple (freq  d p r op) (fres d p r op)
+    genTypes d p r freq fres op = ReqRes { request:  freq d p r op
+                                         , response: fres d p r op
+                                         }
 
     genClientRequestType :: Array Type -> Array Type -> Array Type
                          -> Operation

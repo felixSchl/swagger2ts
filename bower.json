@@ -18,5 +18,12 @@
     "purescript-generics": "~0.7.2",
     "purescript-strings": "~0.7.1",
     "purescript-maps": "~0.5.4"
+  },
+  "devDependencies": {
+    "purescript-spec": "~0.7.2",
+    "purescript-simple-assert": "~0.3.0"
+  },
+  "resolutions": {
+    "purescript-strings": "~0.7.1"
   }
 }
