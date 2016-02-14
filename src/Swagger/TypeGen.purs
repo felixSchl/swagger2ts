@@ -130,8 +130,17 @@ renderType = render 0
 
 -- Convert a swagger schema into a type.
 toType :: Foreign -> F Type
-toType schema = fromRefField <|> fromTypeField
+toType schema = allOf <|> fromRefField <|> fromTypeField
   where
+
+    -- XXX: `allOf` cannot easily be implemented since it may have `$ref`
+    --      to a type that has not been processed yet, so it cannot be realized.
+    --      This means it either needs to be solved in two steps, or we must
+    --      introduce a `CompositeType` that may later be realized, either
+    --      by rendering it to a string or by converting it to a full
+    --      `ObjectType`
+    allOf = Left $ JSONError $ "allOf not implemented!"
+
     fromRefField = ReferenceType <$> do
       ref <- readString =<< readProp "$ref" schema
       return $
@@ -140,10 +149,12 @@ toType schema = fromRefField <|> fromTypeField
         )
 
     fromTypeField = do
-      typ <- readString =<< readProp "type" schema
+      -- XXX: Is this fallback correct?
+      typ <- (readString =<< readProp "type" schema) <|> (return "object")
       case typ of
         "string"  -> pure StringType
         "number"  -> pure NumberType
+        "integer" -> pure NumberType
         "boolean" -> pure BooleanType
         "array"   -> toArray
         "object"  -> toObject
@@ -195,7 +206,7 @@ readParam param = do
         "number"  -> return NumberType
         "integer" -> return NumberType
         "boolean" -> return BooleanType
-        "file"    -> Left $ JSONError "FILE NOT IMPLEMENTED"
+        "file"    -> return StringType -- Left $ JSONError "FILE NOT IMPLEMENTED"
         "array"   -> ArrayType <$> do toType =<< readProp "items" param
         _         -> Left $ JSONError $ "Unknown type `" ++ typ ++ "`"
 
@@ -247,8 +258,11 @@ newtype ReqRes = ReqRes {
 }
 
 newtype SwaggerTypes = SwaggerTypes {
-  server :: Array ReqRes
-, client :: Array ReqRes
+  definitions :: Array Type
+, parameters  :: Array Type
+, responses   :: Array Type
+, server      :: Array ReqRes
+, client      :: Array ReqRes
 }
 
 derive instance genericReqRes :: Generic ReqRes
@@ -280,8 +294,11 @@ generateTypes spec = do
       gen = genTypes definitions parameters responses
 
   return $ SwaggerTypes {
-    server: ops <#> gen genServerRequestType genResponseType
-  , client: ops <#> gen genClientRequestType genResponseType
+    parameters:  parameters
+  , responses:   responses
+  , definitions: definitions
+  , server:      ops <#> gen genServerRequestType genResponseType
+  , client:      ops <#> gen genClientRequestType genResponseType
   }
 
   where
