@@ -22,7 +22,7 @@ main = run [consoleReporter] do
     describe "request/response generation" do
       it "should understand the stock petstore yaml" do
         spec <- parseYaml <$> do
-          liftEff $ readFile "test/fixtures/swagger.yaml"
+          liftEff $ readFile "test/fixtures/petstore.yaml"
         let types = fromRight $ generateTypes spec
             expected = SwaggerTypes {
               client: [
