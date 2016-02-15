@@ -107,7 +107,7 @@ expected = Swagger.TypeGen.SwaggerTypes{
          request:Swagger.TypeGen.InterfaceType "Find pet by idRequest" [] [
             Swagger.TypeGen.Field {
                default:Data.Maybe.Nothing,
-               name:"path",
+               name:"pathParams",
                required:false,
                type:Swagger.TypeGen.ObjectType [
                   Swagger.TypeGen.Field {
@@ -125,7 +125,7 @@ expected = Swagger.TypeGen.SwaggerTypes{
          request:Swagger.TypeGen.InterfaceType "DeletePetRequest" [] [
             Swagger.TypeGen.Field {
                default:Data.Maybe.Nothing,
-               name:"path",
+               name:"pathParams",
                required:false,
                type:Swagger.TypeGen.ObjectType [
                   Swagger.TypeGen.Field {

@@ -17,13 +17,16 @@
     "purescript-node-fs": "~0.10.0",
     "purescript-generics": "~0.7.2",
     "purescript-strings": "~0.7.1",
-    "purescript-maps": "~0.5.4"
+    "purescript-maps": "~0.5.4",
+    "purescript-node-fs-aff": "~0.3.0"
   },
   "devDependencies": {
     "purescript-spec": "~0.7.2",
     "purescript-simple-assert": "~0.3.0"
   },
   "resolutions": {
-    "purescript-strings": "~0.7.1"
+    "purescript-strings": "~0.7.1",
+    "purescript-aff": "~0.13.1",
+    "purescript-transformers": "^0.8.1"
   }
 }

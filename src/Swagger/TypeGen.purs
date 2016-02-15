@@ -1,27 +1,27 @@
 module Swagger.TypeGen where
 
-import Prelude
-import Control.Monad.Eff
-import Control.Monad.Eff.Console
-import Data.Foreign
-import Data.Bifunctor (bimap)
-import Data.Foreign.Index
-import Data.Foreign.Keys
-import Data.Foreign.Class
-import Debug.Trace
-import Node.Buffer hiding (read, readString)
-import Data.Generic
-import Control.Bind ((=<<))
-import Data.Array (foldM, (:), concatMap, length, replicate)
-import Control.Alt ((<|>))
-import Data.Either (Either(..))
-import Data.Maybe (Maybe(..), maybe)
-import Data.Traversable (traverse)
-import Data.Foldable (foldl, any, intercalate)
-import Data.String (toUpper, replace, fromCharArray, uncons, fromChar)
+import           Prelude
+import           Control.Monad.Eff
+import           Control.Monad.Eff.Console
+import           Data.Foreign
+import           Data.Bifunctor (bimap)
+import           Data.Foreign.Index
+import           Data.Foreign.Keys
+import           Data.Foreign.Class
+import           Debug.Trace
+import           Node.Buffer hiding (read, readString)
+import           Data.Generic
+import           Control.Bind ((=<<))
+import           Data.Array (foldM, (:), concatMap, length, replicate)
+import           Control.Alt ((<|>))
+import           Data.Either (Either(..))
+import           Data.Maybe (Maybe(..), maybe)
+import           Data.Traversable (traverse)
+import           Data.Foldable (foldl, any, intercalate)
+import           Data.String (toUpper, replace, fromCharArray, uncons, fromChar)
 import qualified Data.String.Regex as R
 import qualified Data.StrMap as Map
-import Data.Tuple (Tuple (..))
+import           Data.Tuple (Tuple (..))
 
 foreign import parseYaml :: Buffer -> Foreign
 
@@ -211,7 +211,7 @@ readParam param = do
         _         -> Left $ JSONError $ "Unknown type `" ++ typ ++ "`"
 
   return $ Param {
-    loc:      loc
+    loc:      if loc == "path" then "pathParams" else loc
   , name:     name
   , required: required
   , type:     typ
